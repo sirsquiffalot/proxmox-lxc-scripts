@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if ! command -v pct &> /dev/null; then
+    echo -e "\e[1;31mError: pct command not found. Please ensure Proxmox VE is installed.\e[0m"
+    exit 1
+fi
+
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo -e "\e[1;31mUsage: $0 <container_id> <local_file> [remote_file]\e[0m"
+    exit 1
+fi
+
+if [[ ! "$1" =~ ^[0-9]+$ ]]; then
+    echo -e "\e[1;31mInvalid container ID: $1\e[0m"
+    exit 1
+fi
+
+CONTAINER="$1"
+LOCAL_FILE="$2"
+
+if [ ! -f "$LOCAL_FILE" ]; then
+    echo -e "\e[1;31mLocal file '$LOCAL_FILE' does not exist.\e[0m"
+    exit 1
+fi
+
+REMOTE_FILE="$3"
+if [ -z "$REMOTE_FILE" ]; then
+    REMOTE_FILE=$(basename "$LOCAL_FILE")
+elif [[ "$REMOTE_FILE" == */ ]]; then # Check for trailing slash
+    REMOTE_FILE="${REMOTE_FILE}$(basename "$LOCAL_FILE")"
+fi
+
+if ! pct status "$CONTAINER" | grep -q "status: running"; then
+    echo -e "\e[1;31mContainer $CONTAINER is not running.\e[0m"
+    exit 1
+fi
+
+HOSTNAME=$(sed -n 's/^hostname: //p' "/etc/pve/lxc/${CONTAINER}.conf" 2>/dev/null)
+HOSTNAME="${HOSTNAME:-unknown}"
+
+REMOTE_DIR=$(dirname "$REMOTE_FILE")
+pct exec "$CONTAINER" -- mkdir -p "$REMOTE_DIR" >/dev/null 2>&1
+
+echo -e "\e[1;32mPushing '$LOCAL_FILE' to container #${CONTAINER} ($HOSTNAME) as '$REMOTE_FILE'\e[0m"
+
+pct push "$CONTAINER" "$LOCAL_FILE" "$REMOTE_FILE"
+
+transfer_status=$?
+
+if [[ $transfer_status -ne 0 ]]; then
+    echo -e "\e[1;31mFile transfer failed with exit code $transfer_status.\e[0m"
+    exit $transfer_status
+fi
+
+echo -e "\e[1;32mFile transfer successful.\e[0m"
+exit 0

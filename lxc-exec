@@ -1,0 +1,43 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if [ -z "$1" ]; then
+  echo -e "\e[1;31mUsage: $0 <container_id> [command]\e[0m"
+  exit 1
+fi
+
+if [[ ! "$1" =~ ^[0-9]+$ ]]; then
+  echo -e "\e[1;31mInvalid container ID: $1\e[0m"
+  exit 1
+fi
+
+CONTAINER="$1"
+
+# Check container status using pct status
+if ! pct status "$CONTAINER" | grep -q "status: running"; then
+  echo -e "\e[1;31mContainer $CONTAINER is not running.\e[0m"
+  exit 1
+fi
+
+shift
+
+# Get the hostname
+HOSTNAME=$(grep -m 1 hostname "/etc/pve/lxc/${CONTAINER}.conf" | awk '{print $2}')
+if [ -z "$HOSTNAME" ]; then
+    HOSTNAME="unknown"
+fi
+
+# Construct the command
+if [ -z "$@" ]; then
+    COMMAND="/bin/bash"
+    DISPLAY_COMMAND="bash shell"
+else
+    COMMAND="$@"
+    DISPLAY_COMMAND="$COMMAND"
+fi
+
+echo -e "\e[1;32mExecuting \"$DISPLAY_COMMAND\" in container #${CONTAINER} ($HOSTNAME)\e[0m"
+pct exec "$CONTAINER" /bin/bash -- -c "$COMMAND"
+
+exit 0
